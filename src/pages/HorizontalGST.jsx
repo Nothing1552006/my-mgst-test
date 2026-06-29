@@ -9,6 +9,32 @@ const TOTAL_TRIALS = 3
 const LETTERS_PER_TRIAL = 10
 const RESPONSE_TIMEOUT = 3000
 
+const LETTER_SIZES = [220, 180, 140, 100, 70, 50, 36]
+const SIZE_LABELS = ['6/60', '6/36', '6/24', '6/12', '6/9', '6/6', '6/5']
+
+const CLARITY_OPTIONS = [
+  {
+    label: 'Grade 0 — No Oscillopsia',
+    value: 'grade0',
+    clinical: 'Image stable. No visual disturbance during movement.',
+  },
+  {
+    label: 'Grade 1 — Mild Oscillopsia',
+    value: 'grade1',
+    clinical: 'Slight image movement. VOR partially compensating.',
+  },
+  {
+    label: 'Grade 2 — Moderate Oscillopsia',
+    value: 'grade2',
+    clinical: 'Noticeable image blur or bounce. VOR deficit present.',
+  },
+  {
+    label: 'Grade 3 — Severe Oscillopsia',
+    value: 'grade3',
+    clinical: 'Significant image instability or diplopia. Refer for vestibular assessment.',
+  },
+]
+
 function getRandomLetter(exclude) {
   const filtered = LETTERS.filter((l) => l !== exclude)
   return filtered[Math.floor(Math.random() * filtered.length)]
@@ -91,13 +117,75 @@ function ProgressBar({ current, total }) {
   )
 }
 
+function ClarityRating({ onRate }) {
+  return (
+    <div style={{
+      position: 'fixed',
+      inset: 0,
+      background: 'rgba(0,0,0,0.92)',
+      display: 'flex',
+      flexDirection: 'column',
+      alignItems: 'center',
+      justifyContent: 'center',
+      padding: 24,
+      zIndex: 100,
+    }}>
+      <p className="section-title" style={{ marginBottom: 8 }}>
+        Visual Clarity Rating
+      </p>
+      <p style={{
+        fontSize: 14,
+        color: 'var(--gray-400)',
+        marginBottom: 32,
+        textAlign: 'center',
+        lineHeight: 1.6,
+      }}>
+        How clearly could you see the letter while moving?
+      </p>
+      <div style={{
+        display: 'flex',
+        flexDirection: 'column',
+        gap: 12,
+        width: '100%',
+        maxWidth: 320,
+      }}>
+        {CLARITY_OPTIONS.map((option) => (
+          <button
+            key={option.value}
+            onClick={() => onRate(option)}
+            style={{
+              background: 'transparent',
+              border: '1px solid var(--gray-700)',
+              color: 'var(--white)',
+              padding: '16px 20px',
+              width: '100%',
+              textAlign: 'left',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: 4,
+            }}
+          >
+            <span style={{ fontSize: 14, fontWeight: 500 }}>
+              {option.label}
+            </span>
+            <span style={{ fontSize: 11, color: 'var(--gray-600)' }}>
+              {option.clinical}
+            </span>
+          </button>
+        ))}
+      </div>
+    </div>
+  )
+}
+
 function HorizontalGST() {
   const navigate = useNavigate()
   const location = useLocation()
   const athlete = useAthleteStore((s) => s.athlete)
   const saveSession = useAthleteStore((s) => s.saveSession)
 
-  const neutralPosition = location.state?.neutralPosition || null
+  const neutralPosition = location.state?.neutralPosition ||
+    { yaw: 0, pitch: 0, roll: 0 }
   const videoRef = useRef(null)
 
   const {
@@ -105,6 +193,8 @@ function HorizontalGST() {
     isMovingLeft,
     isMovingRight,
     ready,
+    headStats,
+    resetStats,
   } = useFaceTracking(videoRef, neutralPosition)
 
   const {
@@ -122,8 +212,13 @@ function HorizontalGST() {
   const [currentScore, setCurrentScore] = useState(0)
   const [feedback, setFeedback] = useState(null)
   const [showLetter, setShowLetter] = useState(false)
-  const [reactionTimes, setReactionTimes] = useState([])
   const [allTrialData, setAllTrialData] = useState([])
+  const [letterSizeIndex, setLetterSizeIndex] = useState(0)
+  const [showClarity, setShowClarity] = useState(false)
+  const [clarityRatings, setClarityRatings] = useState([])
+  const [pendingAfterClarity, setPendingAfterClarity] = useState(false)
+  const [sizeHistory, setSizeHistory] = useState([])
+  const [trialHeadStats, setTrialHeadStats] = useState([])
 
   const lastLetter = useRef('E')
   const processedTranscript = useRef('')
@@ -133,6 +228,8 @@ function HorizontalGST() {
   const currentScoreRef = useRef(0)
   const letterCountRef = useRef(0)
   const reactionTimesRef = useRef([])
+  const letterSizeIndexRef = useRef(0)
+  const clarityRatingsRef = useRef([])
 
   useEffect(() => {
     if (!athlete) navigate('/athlete')
@@ -143,9 +240,14 @@ function HorizontalGST() {
   }, [currentScore])
 
   useEffect(() => {
+    letterSizeIndexRef.current = letterSizeIndex
+  }, [letterSizeIndex])
+
+  useEffect(() => {
     if (phase !== 'testing') return
     if (!isMoving) return
     if (waitingRef.current) return
+    if (showClarity) return
     if (letterCountRef.current >= LETTERS_PER_TRIAL) return
 
     const newLetter = getRandomLetter(lastLetter.current)
@@ -155,17 +257,14 @@ function HorizontalGST() {
     setShowLetter(true)
     waitingRef.current = true
     letterShownAt.current = Date.now()
+    setSizeHistory((prev) => [...prev, letterSizeIndexRef.current])
 
     setTimeout(() => {
-      if (waitingRef.current) {
-        startListening()
-      }
+      if (waitingRef.current) startListening()
     }, 500)
 
     timeoutRef.current = setTimeout(() => {
-      if (waitingRef.current) {
-        handleResponse(null)
-      }
+      if (waitingRef.current) handleResponse(null)
     }, RESPONSE_TIMEOUT)
 
   }, [isMoving])
@@ -192,24 +291,47 @@ function HorizontalGST() {
         currentScoreRef.current = s + 1
         return s + 1
       })
+      setLetterSizeIndex((prev) => {
+        const next = Math.min(prev + 1, LETTER_SIZES.length - 1)
+        letterSizeIndexRef.current = next
+        return next
+      })
+    } else {
+      setLetterSizeIndex((prev) => {
+        const next = Math.max(prev - 1, 0)
+        letterSizeIndexRef.current = next
+        return next
+      })
     }
 
     reactionTimesRef.current = [...reactionTimesRef.current, reactionTime]
-    setReactionTimes([...reactionTimesRef.current])
 
     const nextCount = letterCountRef.current + 1
     letterCountRef.current = nextCount
     setLetterCount(nextCount)
 
-    if (nextCount >= LETTERS_PER_TRIAL) {
+    const isLastLetter = nextCount >= LETTERS_PER_TRIAL
+
+    setTimeout(() => {
+      setFeedback(null)
+      setShowLetter(false)
       waitingRef.current = false
-      setTimeout(() => endTrial(), 1000)
-    } else {
-      setTimeout(() => {
-        setFeedback(null)
-        setShowLetter(false)
-        waitingRef.current = false
-      }, 800)
+
+      if (isLastLetter) {
+        setPendingAfterClarity(true)
+        setShowClarity(true)
+      }
+    }, 800)
+  }
+
+  const handleClarityRating = (option) => {
+    clarityRatingsRef.current = [...clarityRatingsRef.current, option]
+    setClarityRatings([...clarityRatingsRef.current])
+    setShowClarity(false)
+
+    if (pendingAfterClarity) {
+      setPendingAfterClarity(false)
+      endTrial()
     }
   }
 
@@ -222,10 +344,28 @@ function HorizontalGST() {
         )
       : 0
 
+    const currentHeadStats = {
+      avgSpeed: headStats.avgSpeed,
+      peakSpeed: headStats.peakSpeed,
+      swingCount: headStats.swingCount,
+      speedLabel: headStats.avgSpeed < 20 ? 'Very Slow' :
+        headStats.avgSpeed < 40 ? 'Slow' :
+        headStats.avgSpeed < 80 ? 'Moderate' :
+        headStats.avgSpeed < 120 ? 'Fast' : 'Very Fast',
+    }
+
+    setTrialHeadStats((prev) => [...prev, currentHeadStats])
+    resetStats()
+
     const trialData = {
       trial: currentTrial,
       score,
       avgReactionTime: avgRT,
+      maxLetterSize: SIZE_LABELS[letterSizeIndexRef.current],
+      clarityRating: clarityRatingsRef.current[
+        clarityRatingsRef.current.length - 1
+      ]?.label || '-',
+      headMovement: currentHeadStats,
     }
 
     setAllTrialData((prev) => {
@@ -245,7 +385,11 @@ function HorizontalGST() {
         letterCountRef.current = 0
         setLetterCount(0)
         reactionTimesRef.current = []
-        setReactionTimes([])
+        clarityRatingsRef.current = []
+        setClarityRatings([])
+        setSizeHistory([])
+        setLetterSizeIndex(0)
+        letterSizeIndexRef.current = 0
         setFeedback(null)
         setShowLetter(false)
         setPhase('trialbreak')
@@ -272,6 +416,31 @@ function HorizontalGST() {
         )
       : 0
 
+    const overallAvgSpeed = allTrialData.length > 0
+      ? Math.round(
+          allTrialData.reduce((a, b) => a + (b.headMovement?.avgSpeed || 0), 0) /
+          allTrialData.length
+        )
+      : 0
+
+    const overallPeakSpeed = allTrialData.length > 0
+      ? Math.max(...allTrialData.map((t) => t.headMovement?.peakSpeed || 0))
+      : 0
+
+    const totalSwings = allTrialData.reduce(
+      (a, b) => a + (b.headMovement?.swingCount || 0), 0
+    )
+
+    const dominantClarity = allTrialData
+      .map((t) => t.clarityRating)
+      .filter(Boolean)
+      .join(', ')
+
+    const bestSize = allTrialData
+      .map((t) => t.maxLetterSize)
+      .filter(Boolean)
+      .join(', ')
+
     saveSession({
       name: athlete?.name || 'Unknown',
       age: athlete?.age,
@@ -287,6 +456,17 @@ function HorizontalGST() {
       hTrialScores: scores,
       hAvgReactionTime: avgRT,
       hTrialData: allTrialData,
+      hClarityRatings: dominantClarity,
+      hBestSize: bestSize,
+      hHeadMovement: {
+        avgSpeed: overallAvgSpeed,
+        peakSpeed: overallPeakSpeed,
+        totalSwings,
+        speedLabel: overallAvgSpeed < 20 ? 'Very Slow' :
+          overallAvgSpeed < 40 ? 'Slow' :
+          overallAvgSpeed < 80 ? 'Moderate' :
+          overallAvgSpeed < 120 ? 'Fast' : 'Very Fast',
+      },
       vScore: '-',
       vStatus: '-',
       vAccuracy: null,
@@ -294,11 +474,11 @@ function HorizontalGST() {
     })
 
     navigate('/results', {
-  state: {
-    neutralPosition: neutralPosition || { yaw: 0, pitch: 0, roll: 0 },
-    fromHorizontal: true,
-  }
-})
+      state: {
+        neutralPosition: neutralPosition || { yaw: 0, pitch: 0, roll: 0 },
+        fromHorizontal: true,
+      }
+    })
   }
 
   const startTest = () => {
@@ -310,10 +490,16 @@ function HorizontalGST() {
     setLetterCount(0)
     setTrialScores([])
     setAllTrialData([])
+    setTrialHeadStats([])
     reactionTimesRef.current = []
-    setReactionTimes([])
+    clarityRatingsRef.current = []
+    setClarityRatings([])
+    setSizeHistory([])
+    setLetterSizeIndex(0)
+    letterSizeIndexRef.current = 0
     setFeedback(null)
     setShowLetter(false)
+    resetStats()
   }
 
   if (phase === 'intro') {
@@ -347,9 +533,9 @@ function HorizontalGST() {
           }}>
             {[
               { arrow: '←', text: 'Head moves left' },
-              { arrow: 'E', text: 'Letter appears silently on screen', big: true },
+              { arrow: 'E', text: 'Letter appears — size adapts to performance', big: true },
               { arrow: '→', text: 'Keep moving + say the letter you see' },
-              { arrow: '←', text: 'Next letter appears on next swing' },
+              { arrow: '☑', text: 'Rate visual clarity after each trial' },
             ].map((item, i) => (
               <div key={i} style={{
                 display: 'flex',
@@ -400,36 +586,10 @@ function HorizontalGST() {
               lineHeight: 1.8,
               textTransform: 'uppercase',
               letterSpacing: '0.05em',
+              whiteSpace: 'pre-line',
             }}>
-              ⚠ Do NOT stop your head to answer{'\n'}
-              Keep moving like a pendulum throughout{'\n'}
-              No voice hints — read what you see
+              {`⚠ Do NOT stop your head to answer\nKeep moving like a pendulum throughout\nLetter size changes based on your performance`}
             </p>
-          </div>
-
-          <div style={{
-            border: '1px solid var(--gray-800)',
-            padding: 14,
-          }}>
-            <p className="section-title" style={{ marginBottom: 8 }}>
-              Test details
-            </p>
-            {[
-              ['Trials', '3'],
-              ['Letters per trial', '10'],
-              ['Total letters', '30'],
-              ['Response timeout', '3 seconds'],
-              ['Reaction time', 'Recorded automatically'],
-            ].map(([label, value], i) => (
-              <div key={i} className="row">
-                <span style={{ fontSize: 12, color: 'var(--gray-600)' }}>
-                  {label}
-                </span>
-                <span style={{ fontSize: 12, color: 'var(--gray-400)' }}>
-                  {value}
-                </span>
-              </div>
-            ))}
           </div>
         </div>
 
@@ -517,13 +677,22 @@ function HorizontalGST() {
            trialScores[trialScores.length - 1] >= 5 ? 'Moderate' : 'Poor'}
         </p>
         {allTrialData[allTrialData.length - 1] && (
-          <p style={{
-            color: 'var(--gray-700)',
-            fontSize: 12,
-            marginTop: 4,
-          }}>
-            Avg response: {allTrialData[allTrialData.length - 1].avgReactionTime}ms
-          </p>
+          <>
+            <p style={{ color: 'var(--gray-700)', fontSize: 12, marginTop: 4 }}>
+              Avg response: {allTrialData[allTrialData.length - 1].avgReactionTime}ms
+            </p>
+            <p style={{ color: 'var(--gray-700)', fontSize: 12 }}>
+              Clarity: {allTrialData[allTrialData.length - 1].clarityRating}
+            </p>
+            <p style={{ color: 'var(--gray-700)', fontSize: 12 }}>
+              Head speed: {allTrialData[allTrialData.length - 1].headMovement?.avgSpeed}°/s
+              · {allTrialData[allTrialData.length - 1].headMovement?.speedLabel}
+            </p>
+            <p style={{ color: 'var(--gray-700)', fontSize: 12 }}>
+              Peak: {allTrialData[allTrialData.length - 1].headMovement?.peakSpeed}°/s
+              · Swings: {allTrialData[allTrialData.length - 1].headMovement?.swingCount}
+            </p>
+          </>
         )}
         <p style={{
           color: 'var(--gray-700)',
@@ -571,14 +740,25 @@ function HorizontalGST() {
               <div style={{
                 display: 'flex',
                 justifyContent: 'space-between',
-                marginBottom: 6,
+                marginBottom: 4,
               }}>
                 <span style={{ fontSize: 12, color: 'var(--gray-500)' }}>
                   Trial {i + 1}
                 </span>
-                <span style={{ fontSize: 12, color: 'var(--gray-400)' }}>
-                  {score}/10 · {allTrialData[i]?.avgReactionTime}ms
-                </span>
+                <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                  <span style={{ fontSize: 12, color: 'var(--gray-400)' }}>
+                    {score}/10
+                  </span>
+                  <span style={{ fontSize: 11, color: 'var(--gray-700)' }}>
+                    {allTrialData[i]?.avgReactionTime}ms
+                  </span>
+                  <span style={{ fontSize: 11, color: 'var(--gray-700)' }}>
+                    {allTrialData[i]?.headMovement?.avgSpeed}°/s
+                  </span>
+                  <span style={{ fontSize: 11, color: 'var(--gray-700)' }}>
+                    {allTrialData[i]?.clarityRating?.split('—')[0]}
+                  </span>
+                </div>
               </div>
               <div style={{
                 height: 4,
@@ -608,7 +788,10 @@ function HorizontalGST() {
             ['Total Score', `${total}/${max}`],
             ['Accuracy', `${accuracy}%`],
             ['Avg Response Time', `${avgRT}ms`],
-            ['Status', accuracy >= 80 ? 'Good' : accuracy >= 50 ? 'Moderate' : 'Poor'],
+            ['Avg Head Speed', `${allTrialData.reduce((a, b) => a + (b.headMovement?.avgSpeed || 0), 0) / allTrialData.length || 0}°/s`],
+            ['Peak Head Speed', `${Math.max(...allTrialData.map((t) => t.headMovement?.peakSpeed || 0))}°/s`],
+            ['Status', accuracy >= 80 ? 'Good' :
+              accuracy >= 50 ? 'Moderate' : 'Poor'],
           ].map(([label, value], i) => (
             <div key={i} className="row">
               <span style={{ fontSize: 13, color: 'var(--gray-500)' }}>
@@ -659,6 +842,10 @@ function HorizontalGST() {
 
       <video ref={videoRef} style={{ display: 'none' }} playsInline muted />
 
+      {showClarity && (
+        <ClarityRating onRate={handleClarityRating} />
+      )}
+
       <ProgressBar current={letterCount} total={LETTERS_PER_TRIAL} />
 
       <div style={{
@@ -677,8 +864,23 @@ function HorizontalGST() {
           {letterCount}/{LETTERS_PER_TRIAL}
         </span>
         <span style={{ fontSize: 12, color: 'var(--gray-600)', letterSpacing: '0.06em' }}>
-          SCORE {currentScore}
+          {SIZE_LABELS[letterSizeIndex]}
         </span>
+      </div>
+
+      <div style={{
+        position: 'absolute',
+        top: 44,
+        right: 24,
+        textAlign: 'right',
+      }}>
+        <p style={{
+          fontSize: 10,
+          color: 'var(--gray-800)',
+          letterSpacing: '0.05em',
+        }}>
+          {headStats.currentSpeed}°/s · {headStats.speedLabel}
+        </p>
       </div>
 
       <PendulumGuide
@@ -688,7 +890,7 @@ function HorizontalGST() {
       />
 
       <div style={{
-        fontSize: showLetter ? 220 : 0,
+        fontSize: showLetter ? LETTER_SIZES[letterSizeIndex] : 0,
         fontWeight: 200,
         color: feedback === 'correct'
           ? 'var(--correct)'
@@ -698,7 +900,7 @@ function HorizontalGST() {
         lineHeight: 1,
         fontFamily: 'monospace',
         letterSpacing: '-0.05em',
-        transition: 'font-size 0.15s ease, color 0.2s ease',
+        transition: 'font-size 0.3s ease, color 0.2s ease',
         userSelect: 'none',
         minHeight: 220,
         display: 'flex',

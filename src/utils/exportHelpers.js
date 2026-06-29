@@ -26,6 +26,10 @@ export function exportCSV(sessions) {
     'V-Trial 1': s.vTrialScores?.[0] ?? '-',
     'V-Trial 2': s.vTrialScores?.[1] ?? '-',
     'V-Trial 3': s.vTrialScores?.[2] ?? '-',
+'H-Clarity Ratings': s.hClarityRatings || '-',
+'H-Best Size': s.hBestSize || '-',
+'V-Clarity Ratings': s.vClarityRatings || '-',
+'V-Best Size': s.vBestSize || '-',
   }))
 
   const worksheet = XLSX.utils.json_to_sheet(rows)
