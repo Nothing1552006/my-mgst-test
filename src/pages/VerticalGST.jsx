@@ -13,26 +13,10 @@ const LETTER_SIZES = [220, 180, 140, 100, 70, 50, 36]
 const SIZE_LABELS = ['6/60', '6/36', '6/24', '6/12', '6/9', '6/6', '6/5']
 
 const CLARITY_OPTIONS = [
-  {
-    label: 'Grade 0 — No Oscillopsia',
-    value: 'grade0',
-    clinical: 'Image stable. No visual disturbance during movement.',
-  },
-  {
-    label: 'Grade 1 — Mild Oscillopsia',
-    value: 'grade1',
-    clinical: 'Slight image movement. VOR partially compensating.',
-  },
-  {
-    label: 'Grade 2 — Moderate Oscillopsia',
-    value: 'grade2',
-    clinical: 'Noticeable image blur or bounce. VOR deficit present.',
-  },
-  {
-    label: 'Grade 3 — Severe Oscillopsia',
-    value: 'grade3',
-    clinical: 'Significant image instability or diplopia. Refer for vestibular assessment.',
-  },
+  { label: 'Clear', grade: 0, color: 'var(--correct)' },
+  { label: 'Mild Blur', grade: 1, color: 'var(--gray-400)' },
+  { label: 'Moderate Blur', grade: 2, color: 'var(--gray-400)' },
+  { label: 'Severe Blur', grade: 3, color: 'var(--wrong)' },
 ]
 
 function getRandomLetter(exclude) {
@@ -116,60 +100,35 @@ function ProgressBar({ current, total }) {
   )
 }
 
-function ClarityRating({ onRate }) {
+function ClarityButtonRow({ onRate }) {
   return (
-    <div style={{
-      position: 'fixed',
-      inset: 0,
-      background: 'rgba(0,0,0,0.92)',
-      display: 'flex',
-      flexDirection: 'column',
-      alignItems: 'center',
-      justifyContent: 'center',
-      padding: 24,
-      zIndex: 100,
-    }}>
-      <p className="section-title" style={{ marginBottom: 8 }}>
-        Visual Clarity Rating
-      </p>
+    <div style={{ width: '100%', maxWidth: 360, marginTop: 20 }}>
       <p style={{
-        fontSize: 14,
-        color: 'var(--gray-400)',
-        marginBottom: 32,
+        fontSize: 11,
+        color: 'var(--gray-600)',
         textAlign: 'center',
-        lineHeight: 1.6,
+        letterSpacing: '0.06em',
+        textTransform: 'uppercase',
+        marginBottom: 10,
       }}>
-        How clearly could you see the letter while moving?
+        Examiner — rate clarity for this letter
       </p>
-      <div style={{
-        display: 'flex',
-        flexDirection: 'column',
-        gap: 12,
-        width: '100%',
-        maxWidth: 320,
-      }}>
-        {CLARITY_OPTIONS.map((option) => (
+      <div style={{ display: 'flex', gap: 8 }}>
+        {CLARITY_OPTIONS.map((opt) => (
           <button
-            key={option.value}
-            onClick={() => onRate(option)}
+            key={opt.grade}
+            onClick={() => onRate(opt)}
             style={{
+              flex: 1,
               background: 'transparent',
               border: '1px solid var(--gray-700)',
-              color: 'var(--white)',
-              padding: '16px 20px',
-              width: '100%',
-              textAlign: 'left',
-              display: 'flex',
-              flexDirection: 'column',
-              gap: 4,
+              color: opt.color,
+              fontSize: 12,
+              padding: '12px 4px',
+              textAlign: 'center',
             }}
           >
-            <span style={{ fontSize: 14, fontWeight: 500 }}>
-              {option.label}
-            </span>
-            <span style={{ fontSize: 11, color: 'var(--gray-600)' }}>
-              {option.clinical}
-            </span>
+            {opt.label}
           </button>
         ))}
       </div>
@@ -214,11 +173,7 @@ function VerticalGST() {
   const [showLetter, setShowLetter] = useState(false)
   const [allTrialData, setAllTrialData] = useState([])
   const [letterSizeIndex, setLetterSizeIndex] = useState(0)
-  const [showClarity, setShowClarity] = useState(false)
-  const [clarityRatings, setClarityRatings] = useState([])
-  const [pendingAfterClarity, setPendingAfterClarity] = useState(false)
-  const [sizeHistory, setSizeHistory] = useState([])
-  const [trialHeadStats, setTrialHeadStats] = useState([])
+  const [awaitingClarity, setAwaitingClarity] = useState(false)
 
   const lastLetter = useRef('E')
   const processedTranscript = useRef('')
@@ -229,7 +184,8 @@ function VerticalGST() {
   const letterCountRef = useRef(0)
   const reactionTimesRef = useRef([])
   const letterSizeIndexRef = useRef(0)
-  const clarityRatingsRef = useRef([])
+  const letterClarityRef = useRef([])
+  const pendingRecordRef = useRef(null)
 
   useEffect(() => {
     if (!athlete) navigate('/athlete')
@@ -247,7 +203,7 @@ function VerticalGST() {
     if (phase !== 'testing') return
     if (!isMoving) return
     if (waitingRef.current) return
-    if (showClarity) return
+    if (awaitingClarity) return
     if (letterCountRef.current >= LETTERS_PER_TRIAL) return
 
     const newLetter = getRandomLetter(lastLetter.current)
@@ -257,7 +213,6 @@ function VerticalGST() {
     setShowLetter(true)
     waitingRef.current = true
     letterShownAt.current = Date.now()
-    setSizeHistory((prev) => [...prev, letterSizeIndexRef.current])
 
     setTimeout(() => {
       if (waitingRef.current) startListening()
@@ -286,6 +241,14 @@ function VerticalGST() {
     const correct = spokenLetter === currentLetter
     setFeedback(correct ? 'correct' : 'wrong')
 
+    pendingRecordRef.current = {
+      letter: currentLetter,
+      spoken: spokenLetter || '-',
+      correct,
+      reactionTime,
+      sizeLabel: SIZE_LABELS[letterSizeIndexRef.current],
+    }
+
     if (correct) {
       setCurrentScore((s) => {
         currentScoreRef.current = s + 1
@@ -305,33 +268,28 @@ function VerticalGST() {
     }
 
     reactionTimesRef.current = [...reactionTimesRef.current, reactionTime]
+    setShowLetter(false)
+    setAwaitingClarity(true)
+  }
+
+  const handleClarityTap = (option) => {
+    const record = {
+      ...pendingRecordRef.current,
+      clarityGrade: option.grade,
+      clarityLabel: option.label,
+    }
+    letterClarityRef.current = [...letterClarityRef.current, record]
+
+    waitingRef.current = false
+    setAwaitingClarity(false)
+    setFeedback(null)
 
     const nextCount = letterCountRef.current + 1
     letterCountRef.current = nextCount
     setLetterCount(nextCount)
 
-    const isLastLetter = nextCount >= LETTERS_PER_TRIAL
-
-    setTimeout(() => {
-      setFeedback(null)
-      setShowLetter(false)
-      waitingRef.current = false
-
-      if (isLastLetter) {
-        setPendingAfterClarity(true)
-        setShowClarity(true)
-      }
-    }, 800)
-  }
-
-  const handleClarityRating = (option) => {
-    clarityRatingsRef.current = [...clarityRatingsRef.current, option]
-    setClarityRatings([...clarityRatingsRef.current])
-    setShowClarity(false)
-
-    if (pendingAfterClarity) {
-      setPendingAfterClarity(false)
-      endTrial()
+    if (nextCount >= LETTERS_PER_TRIAL) {
+      setTimeout(() => endTrial(), 300)
     }
   }
 
@@ -353,18 +311,20 @@ function VerticalGST() {
         headStats.avgSpeed < 80 ? 'Moderate' :
         headStats.avgSpeed < 120 ? 'Fast' : 'Very Fast',
     }
-
-    setTrialHeadStats((prev) => [...prev, currentHeadStats])
     resetStats()
+
+    const grades = letterClarityRef.current.map((l) => l.clarityGrade)
+    const avgGrade = grades.length > 0
+      ? Math.round((grades.reduce((a, b) => a + b, 0) / grades.length) * 10) / 10
+      : 0
 
     const trialData = {
       trial: currentTrial,
       score,
       avgReactionTime: avgRT,
       maxLetterSize: SIZE_LABELS[letterSizeIndexRef.current],
-      clarityRating: clarityRatingsRef.current[
-        clarityRatingsRef.current.length - 1
-      ]?.label || '-',
+      avgClarityGrade: avgGrade,
+      letterClarity: letterClarityRef.current,
       headMovement: currentHeadStats,
     }
 
@@ -385,9 +345,7 @@ function VerticalGST() {
         letterCountRef.current = 0
         setLetterCount(0)
         reactionTimesRef.current = []
-        clarityRatingsRef.current = []
-        setClarityRatings([])
-        setSizeHistory([])
+        letterClarityRef.current = []
         setLetterSizeIndex(0)
         letterSizeIndexRef.current = 0
         setFeedback(null)
@@ -431,15 +389,13 @@ function VerticalGST() {
       (a, b) => a + (b.headMovement?.swingCount || 0), 0
     )
 
-    const dominantClarity = allTrialData
-      .map((t) => t.clarityRating)
-      .filter(Boolean)
-      .join(', ')
-
-    const bestSize = allTrialData
-      .map((t) => t.maxLetterSize)
-      .filter(Boolean)
-      .join(', ')
+    const allLetterClarity = allTrialData.flatMap((t) => t.letterClarity || [])
+    const overallAvgClarity = allLetterClarity.length > 0
+      ? Math.round(
+          (allLetterClarity.reduce((a, b) => a + b.clarityGrade, 0) /
+          allLetterClarity.length) * 10
+        ) / 10
+      : 0
 
     const latest = sessions[0]
 
@@ -458,8 +414,8 @@ function VerticalGST() {
       hTrialScores: latest?.hTrialScores || [],
       hAvgReactionTime: latest?.hAvgReactionTime || 0,
       hTrialData: latest?.hTrialData || [],
-      hClarityRatings: latest?.hClarityRatings || '-',
-      hBestSize: latest?.hBestSize || '-',
+      hAvgClarityGrade: latest?.hAvgClarityGrade || 0,
+      hAllLetterClarity: latest?.hAllLetterClarity || [],
       hHeadMovement: latest?.hHeadMovement || null,
       vScore: `${total}/${max}`,
       vStatus: status,
@@ -467,8 +423,8 @@ function VerticalGST() {
       vTrialScores: scores,
       vAvgReactionTime: avgRT,
       vTrialData: allTrialData,
-      vClarityRatings: dominantClarity,
-      vBestSize: bestSize,
+      vAvgClarityGrade: overallAvgClarity,
+      vAllLetterClarity: allLetterClarity,
       vHeadMovement: {
         avgSpeed: overallAvgSpeed,
         peakSpeed: overallPeakSpeed,
@@ -492,11 +448,8 @@ function VerticalGST() {
     setLetterCount(0)
     setTrialScores([])
     setAllTrialData([])
-    setTrialHeadStats([])
     reactionTimesRef.current = []
-    clarityRatingsRef.current = []
-    setClarityRatings([])
-    setSizeHistory([])
+    letterClarityRef.current = []
     setLetterSizeIndex(0)
     letterSizeIndexRef.current = 0
     setFeedback(null)
@@ -523,79 +476,21 @@ function VerticalGST() {
 
         <hr className="divider" />
 
-        <div style={{ marginBottom: 8 }}>
-          <p className="section-title">How it works</p>
-          <div style={{
-            border: '1px solid var(--gray-800)',
-            padding: 16,
-            marginBottom: 16,
-            display: 'flex',
-            flexDirection: 'column',
-            gap: 12,
+        <div style={{
+          background: 'var(--gray-900)',
+          border: '1px solid var(--gray-800)',
+          padding: 14,
+          marginBottom: 16,
+        }}>
+          <p style={{
+            fontSize: 12,
+            color: 'var(--gray-400)',
+            lineHeight: 1.8,
+            whiteSpace: 'pre-line',
           }}>
-            {[
-              { arrow: '↑', text: 'Head moves up' },
-              { arrow: 'E', text: 'Letter appears — size adapts to performance', big: true },
-              { arrow: '↓', text: 'Keep moving + say the letter you see' },
-              { arrow: '☑', text: 'Rate visual clarity after each trial' },
-            ].map((item, i) => (
-              <div key={i} style={{
-                display: 'flex',
-                justifyContent: 'space-between',
-                alignItems: 'center',
-                padding: '8px 0',
-                borderBottom: i < 3 ? '1px solid var(--gray-900)' : 'none',
-              }}>
-                <span style={{
-                  fontSize: item.big ? 40 : 28,
-                  color: 'var(--white)',
-                  fontFamily: item.big ? 'monospace' : 'inherit',
-                  fontWeight: item.big ? 200 : 400,
-                  minWidth: 40,
-                }}>
-                  {item.arrow}
-                </span>
-                <p style={{
-                  fontSize: 13,
-                  color: 'var(--gray-400)',
-                  textAlign: 'center',
-                  flex: 1,
-                  paddingLeft: 12,
-                }}>
-                  {item.text}
-                </p>
-                <span style={{
-                  fontSize: 11,
-                  color: 'var(--gray-700)',
-                  minWidth: 24,
-                  textAlign: 'right',
-                }}>
-                  0{i + 1}
-                </span>
-              </div>
-            ))}
-          </div>
-
-          <div style={{
-            background: 'var(--gray-900)',
-            border: '1px solid var(--gray-800)',
-            padding: 14,
-            marginBottom: 16,
-          }}>
-            <p style={{
-              fontSize: 12,
-              color: 'var(--gray-400)',
-              lineHeight: 1.8,
-              textTransform: 'uppercase',
-              letterSpacing: '0.05em',
-              whiteSpace: 'pre-line',
-            }}>
-              {`⚠ Do NOT stop your head to answer\nKeep moving like a pendulum throughout\nLetter size changes based on your performance`}
-            </p>
-          </div>
+            {`Examiner role: after the athlete says each letter, ask how clear it looked\nand tap Clear / Mild / Moderate / Severe before the next letter appears.\nDo NOT let the athlete stop moving their head.`}
+          </p>
         </div>
-
-        <hr className="divider" />
 
         <div style={{ marginBottom: 20 }}>
           <p className="section-title">Camera Status</p>
@@ -651,6 +546,7 @@ function VerticalGST() {
   }
 
   if (phase === 'trialbreak') {
+    const last = allTrialData[allTrialData.length - 1]
     return (
       <div style={{
         minHeight: '100vh',
@@ -669,30 +565,16 @@ function VerticalGST() {
           {trialScores[trialScores.length - 1]}
           <span style={{ fontSize: 32, color: 'var(--gray-700)' }}>/10</span>
         </p>
-        <p style={{
-          color: 'var(--gray-500)',
-          marginTop: 8,
-          fontSize: 13,
-          letterSpacing: '0.05em',
-        }}>
-          {trialScores[trialScores.length - 1] >= 8 ? 'Good' :
-           trialScores[trialScores.length - 1] >= 5 ? 'Moderate' : 'Poor'}
-        </p>
-        {allTrialData[allTrialData.length - 1] && (
+        {last && (
           <>
             <p style={{ color: 'var(--gray-700)', fontSize: 12, marginTop: 4 }}>
-              Avg response: {allTrialData[allTrialData.length - 1].avgReactionTime}ms
+              Avg response: {last.avgReactionTime}ms
             </p>
             <p style={{ color: 'var(--gray-700)', fontSize: 12 }}>
-              Clarity: {allTrialData[allTrialData.length - 1].clarityRating}
+              Avg clarity grade: {last.avgClarityGrade} / 3
             </p>
             <p style={{ color: 'var(--gray-700)', fontSize: 12 }}>
-              Head speed: {allTrialData[allTrialData.length - 1].headMovement?.avgSpeed}°/s
-              · {allTrialData[allTrialData.length - 1].headMovement?.speedLabel}
-            </p>
-            <p style={{ color: 'var(--gray-700)', fontSize: 12 }}>
-              Peak: {allTrialData[allTrialData.length - 1].headMovement?.peakSpeed}°/s
-              · Swings: {allTrialData[allTrialData.length - 1].headMovement?.swingCount}
+              Head speed: {last.headMovement?.avgSpeed}°/s · {last.headMovement?.speedLabel}
             </p>
           </>
         )}
@@ -700,7 +582,6 @@ function VerticalGST() {
           color: 'var(--gray-700)',
           marginTop: 16,
           fontSize: 12,
-          letterSpacing: '0.05em',
         }}>
           Next trial in 3 seconds
         </p>
@@ -713,12 +594,6 @@ function VerticalGST() {
     const total = trialScores.reduce((a, b) => a + b, 0)
     const max = TOTAL_TRIALS * LETTERS_PER_TRIAL
     const accuracy = Math.round((total / max) * 100)
-    const avgRT = allTrialData.length > 0
-      ? Math.round(
-          allTrialData.reduce((a, b) => a + b.avgReactionTime, 0) /
-          allTrialData.length
-        )
-      : 0
 
     return (
       <div style={{
@@ -729,94 +604,34 @@ function VerticalGST() {
         flexDirection: 'column',
         justifyContent: 'center',
       }}>
-        <p className="section-title" style={{ marginBottom: 8 }}>
-          Vertical GST Complete
-        </p>
+        <p className="section-title">Vertical GST Complete</p>
         <p className="title-large">Trial Summary</p>
 
         <hr className="divider" />
 
-        <div style={{ marginBottom: 24 }}>
-          {trialScores.map((score, i) => (
-            <div key={i} style={{ marginBottom: 16 }}>
-              <div style={{
-                display: 'flex',
-                justifyContent: 'space-between',
-                marginBottom: 4,
-              }}>
-                <span style={{ fontSize: 12, color: 'var(--gray-500)' }}>
-                  Trial {i + 1}
-                </span>
-                <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-                  <span style={{ fontSize: 12, color: 'var(--gray-400)' }}>
-                    {score}/10
-                  </span>
-                  <span style={{ fontSize: 11, color: 'var(--gray-700)' }}>
-                    {allTrialData[i]?.avgReactionTime}ms
-                  </span>
-                  <span style={{ fontSize: 11, color: 'var(--gray-700)' }}>
-                    {allTrialData[i]?.headMovement?.avgSpeed}°/s
-                  </span>
-                  <span style={{ fontSize: 11, color: 'var(--gray-700)' }}>
-                    {allTrialData[i]?.clarityRating?.split('—')[0]}
-                  </span>
-                </div>
-              </div>
-              <div style={{
-                height: 4,
-                background: 'var(--gray-900)',
-                borderRadius: 2,
-                overflow: 'hidden',
-              }}>
-                <div style={{
-                  height: '100%',
-                  width: `${(score / 10) * 100}%`,
-                  background: score >= 8
-                    ? 'var(--correct)'
-                    : score >= 5
-                    ? 'var(--gray-500)'
-                    : 'var(--wrong)',
-                  transition: 'width 0.5s ease',
-                }} />
-              </div>
-            </div>
-          ))}
-        </div>
+        {trialScores.map((score, i) => (
+          <div key={i} className="row">
+            <span style={{ fontSize: 12, color: 'var(--gray-500)' }}>
+              Trial {i + 1}
+            </span>
+            <span style={{ fontSize: 12, color: 'var(--gray-400)' }}>
+              {score}/10 · {allTrialData[i]?.avgReactionTime}ms · clarity {allTrialData[i]?.avgClarityGrade}/3
+            </span>
+          </div>
+        ))}
 
         <hr className="divider" />
 
-        <div style={{ marginBottom: 32 }}>
-          {[
-            ['Total Score', `${total}/${max}`],
-            ['Accuracy', `${accuracy}%`],
-            ['Avg Response Time', `${avgRT}ms`],
-            ['Avg Head Speed', `${Math.round(allTrialData.reduce((a, b) => a + (b.headMovement?.avgSpeed || 0), 0) / (allTrialData.length || 1))}°/s`],
-            ['Peak Head Speed', `${Math.max(...allTrialData.map((t) => t.headMovement?.peakSpeed || 0))}°/s`],
-            ['Status', accuracy >= 80 ? 'Good' :
-              accuracy >= 50 ? 'Moderate' : 'Poor'],
-          ].map(([label, value], i) => (
-            <div key={i} className="row">
-              <span style={{ fontSize: 13, color: 'var(--gray-500)' }}>
-                {label}
-              </span>
-              <span style={{
-                fontSize: 13,
-                color: label === 'Status'
-                  ? accuracy >= 80
-                    ? 'var(--correct)'
-                    : accuracy >= 50
-                    ? 'var(--gray-400)'
-                    : 'var(--wrong)'
-                  : 'var(--white)',
-                fontWeight: label === 'Status' ? 600 : 400,
-              }}>
-                {value}
-              </span>
-            </div>
-          ))}
+        <div className="row">
+          <span style={{ fontSize: 13, color: 'var(--gray-500)' }}>Total Score</span>
+          <span style={{ fontSize: 13, color: 'var(--white)' }}>{total}/{max}</span>
+        </div>
+        <div className="row">
+          <span style={{ fontSize: 13, color: 'var(--gray-500)' }}>Accuracy</span>
+          <span style={{ fontSize: 13, color: 'var(--white)' }}>{accuracy}%</span>
         </div>
 
-        <button className="btn-primary" onClick={finishTest}>
+        <button className="btn-primary" onClick={finishTest} style={{ marginTop: 24 }}>
           Save and View Full Results →
         </button>
 
@@ -843,11 +658,6 @@ function VerticalGST() {
     }}>
 
       <video ref={videoRef} style={{ display: 'none' }} playsInline muted />
-
-      {showClarity && (
-        <ClarityRating onRate={handleClarityRating} />
-      )}
-
       <ProgressBar current={letterCount} total={LETTERS_PER_TRIAL} />
 
       <div style={{
@@ -859,13 +669,13 @@ function VerticalGST() {
         justifyContent: 'space-between',
         padding: '14px 24px 0',
       }}>
-        <span style={{ fontSize: 12, color: 'var(--gray-600)', letterSpacing: '0.06em' }}>
+        <span style={{ fontSize: 12, color: 'var(--gray-600)' }}>
           TRIAL {currentTrial}/{TOTAL_TRIALS}
         </span>
-        <span style={{ fontSize: 12, color: 'var(--gray-600)', letterSpacing: '0.06em' }}>
+        <span style={{ fontSize: 12, color: 'var(--gray-600)' }}>
           {letterCount}/{LETTERS_PER_TRIAL}
         </span>
-        <span style={{ fontSize: 12, color: 'var(--gray-600)', letterSpacing: '0.06em' }}>
+        <span style={{ fontSize: 12, color: 'var(--gray-600)' }}>
           {SIZE_LABELS[letterSizeIndex]}
         </span>
       </div>
@@ -876,43 +686,43 @@ function VerticalGST() {
         right: 24,
         textAlign: 'right',
       }}>
-        <p style={{
-          fontSize: 10,
-          color: 'var(--gray-800)',
-          letterSpacing: '0.05em',
-        }}>
+        <p style={{ fontSize: 10, color: 'var(--gray-800)' }}>
           {headStats.currentSpeed}°/s · {headStats.speedLabel}
         </p>
       </div>
 
-      <PendulumGuide
-        isMovingUp={isMovingUp}
-        isMovingDown={isMovingDown}
-        isMoving={isMoving}
-      />
+      {!awaitingClarity && (
+        <PendulumGuide
+          isMovingUp={isMovingUp}
+          isMovingDown={isMovingDown}
+          isMoving={isMoving}
+        />
+      )}
 
-      <div style={{
-        fontSize: showLetter ? LETTER_SIZES[letterSizeIndex] : 0,
-        fontWeight: 200,
-        color: feedback === 'correct'
-          ? 'var(--correct)'
-          : feedback === 'wrong'
-          ? 'var(--wrong)'
-          : 'var(--white)',
-        lineHeight: 1,
-        fontFamily: 'monospace',
-        letterSpacing: '-0.05em',
-        transition: 'font-size 0.3s ease, color 0.2s ease',
-        userSelect: 'none',
-        minHeight: 220,
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-      }}>
-        {showLetter ? currentLetter : ''}
-      </div>
+      {!awaitingClarity && (
+        <div style={{
+          fontSize: showLetter ? LETTER_SIZES[letterSizeIndex] : 0,
+          fontWeight: 200,
+          color: feedback === 'correct'
+            ? 'var(--correct)'
+            : feedback === 'wrong'
+            ? 'var(--wrong)'
+            : 'var(--white)',
+          lineHeight: 1,
+          fontFamily: 'monospace',
+          letterSpacing: '-0.05em',
+          transition: 'font-size 0.3s ease, color 0.2s ease',
+          userSelect: 'none',
+          minHeight: 220,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+        }}>
+          {showLetter ? currentLetter : ''}
+        </div>
+      )}
 
-      {feedback && (
+      {feedback && !awaitingClarity && (
         <p style={{
           fontSize: 13,
           color: feedback === 'correct' ? 'var(--correct)' : 'var(--wrong)',
@@ -924,7 +734,22 @@ function VerticalGST() {
         </p>
       )}
 
-      {!showLetter && !feedback && (
+      {awaitingClarity && (
+        <>
+          <p style={{
+            fontSize: 13,
+            color: feedback === 'correct' ? 'var(--correct)' : 'var(--wrong)',
+            letterSpacing: '0.12em',
+            textTransform: 'uppercase',
+            marginBottom: 4,
+          }}>
+            {feedback === 'correct' ? 'Correct' : 'Wrong'} — letter was {currentLetter}
+          </p>
+          <ClarityButtonRow onRate={handleClarityTap} />
+        </>
+      )}
+
+      {!showLetter && !feedback && !awaitingClarity && (
         <p style={{
           fontSize: 13,
           color: 'var(--gray-800)',
@@ -957,8 +782,14 @@ function VerticalGST() {
           </span>
         </div>
 
-        <span style={{ fontSize: 11, color: 'var(--gray-700)', letterSpacing: '0.05em' }}>
-          {listening ? '🎤 Listening' : isMoving ? 'Keep moving' : '↑ Swing head ↓'}
+        <span style={{ fontSize: 11, color: 'var(--gray-700)' }}>
+          {awaitingClarity
+            ? 'Waiting for examiner'
+            : listening
+            ? '🎤 Listening'
+            : isMoving
+            ? 'Keep moving'
+            : '↑ Swing head ↓'}
         </span>
 
         <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
