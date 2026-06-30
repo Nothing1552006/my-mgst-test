@@ -3,7 +3,6 @@ import HomePage from './pages/HomePage'
 import AthleteForm from './pages/AthleteForm'
 import CalibrationPage from './pages/CalibrationPage'
 import HorizontalGST from './pages/HorizontalGST'
-import VerticalGST from './pages/VerticalGST'
 import ResultsPage from './pages/ResultsPage'
 import './index.css'
 
@@ -15,7 +14,6 @@ function App() {
         <Route path="/athlete" element={<AthleteForm />} />
         <Route path="/calibration" element={<CalibrationPage />} />
         <Route path="/horizontal" element={<HorizontalGST />} />
-        <Route path="/vertical" element={<VerticalGST />} />
         <Route path="/results" element={<ResultsPage />} />
       </Routes>
     </BrowserRouter>

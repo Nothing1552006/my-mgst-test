@@ -21,17 +21,24 @@ function ResultsPage() {
     return { label: 'Slow', color: 'var(--wrong)' }
   }
 
-  const getInterpretation = (hStatus, vStatus, hRT, vRT) => {
-    if (hStatus === 'Good' && vStatus === 'Good') {
-      return 'Athlete demonstrates good gaze stabilization in both horizontal and vertical planes. Vestibulo-ocular reflex is functioning within normal range. Suitable for full sports participation.'
+  const getGSTClass = (speed) => {
+    if (!speed) return null
+    if (speed >= 120) return { label: 'Normal GST', color: 'var(--correct)' }
+    if (speed < 80) return { label: 'Abnormal GST', color: 'var(--wrong)' }
+    return { label: 'Borderline', color: 'var(--gray-400)' }
+  }
+
+  const getInterpretation = (status, rt) => {
+    if (status === 'Good') {
+      return 'Athlete demonstrates good gaze stabilization. Vestibulo-ocular reflex is functioning within normal range. Suitable for full sports participation.'
     }
-    if (hStatus === 'Poor' || vStatus === 'Poor') {
-      return 'Athlete shows poor gaze stabilization in one or both planes. Further clinical assessment is strongly recommended before returning to sports. Consider vestibular rehabilitation.'
+    if (status === 'Poor') {
+      return 'Athlete shows poor gaze stabilization. Further clinical assessment is strongly recommended before returning to sports. Consider vestibular rehabilitation.'
     }
-    if (hStatus === 'Moderate' || vStatus === 'Moderate') {
+    if (status === 'Moderate') {
       return 'Athlete shows moderate gaze stabilization. Monitor performance and retest after 2-4 weeks of vestibular training. Cleared for light training with caution.'
     }
-    return 'Complete both horizontal and vertical tests for full interpretation.'
+    return 'Complete the test for full interpretation.'
   }
 
   if (!latest) {
@@ -48,7 +55,7 @@ function ResultsPage() {
   }
 
   const hRT = getRTInterpretation(latest.hAvgReactionTime)
-  const vRT = getRTInterpretation(latest.vAvgReactionTime)
+  const hGST = getGSTClass(latest.hHeadMovement?.avgSpeed)
 
   return (
     <div className="page">
@@ -100,7 +107,7 @@ function ResultsPage() {
       <hr className="divider" />
 
       <div style={{ marginBottom: 24 }}>
-        <p className="section-title">Horizontal GST</p>
+        <p className="section-title">Gaze Stabilization Test (GST)</p>
 
         <div style={{
           display: 'flex',
@@ -146,6 +153,50 @@ function ResultsPage() {
           </div>
         )}
 
+        {latest.hAvgClarityGrade !== undefined && (
+          <div className="row">
+            <span style={{ fontSize: 13, color: 'var(--gray-500)' }}>
+              Avg Clarity Grade
+            </span>
+            <span style={{ fontSize: 13, color: 'var(--white)' }}>
+              {latest.hAvgClarityGrade} / 3
+            </span>
+          </div>
+        )}
+
+        {latest.hHeadMovement && (
+          <>
+            <div className="row">
+              <span style={{ fontSize: 13, color: 'var(--gray-500)' }}>
+                Head Velocity (avg / peak)
+              </span>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <span style={{ fontSize: 13, color: 'var(--white)' }}>
+                  {latest.hHeadMovement.avgSpeed}°/s · {latest.hHeadMovement.peakSpeed}°/s
+                </span>
+                {hGST && (
+                  <span style={{
+                    fontSize: 11,
+                    color: hGST.color,
+                    letterSpacing: '0.06em',
+                    textTransform: 'uppercase',
+                  }}>
+                    {hGST.label}
+                  </span>
+                )}
+              </div>
+            </div>
+            <div className="row">
+              <span style={{ fontSize: 13, color: 'var(--gray-500)' }}>
+                Total Swings
+              </span>
+              <span style={{ fontSize: 13, color: 'var(--white)' }}>
+                {latest.hHeadMovement.totalSwings}
+              </span>
+            </div>
+          </>
+        )}
+
         {latest.hTrialScores && latest.hTrialScores.length > 0 && (
           <div style={{ marginTop: 12 }}>
             <p className="section-title" style={{ marginBottom: 8 }}>
@@ -168,6 +219,11 @@ function ResultsPage() {
                     {latest.hTrialData?.[i] && (
                       <span style={{ fontSize: 11, color: 'var(--gray-700)' }}>
                         {latest.hTrialData[i].avgReactionTime}ms
+                      </span>
+                    )}
+                    {latest.hTrialData?.[i] && (
+                      <span style={{ fontSize: 11, color: 'var(--gray-700)' }}>
+                        clarity {latest.hTrialData[i].avgClarityGrade}/3
                       </span>
                     )}
                     <span className={getTag(
@@ -204,216 +260,53 @@ function ResultsPage() {
       <hr className="divider" />
 
       <div style={{ marginBottom: 24 }}>
-        <p className="section-title">Vertical GST</p>
-
-        {latest.vScore === '-' ? (
-          <div>
-            <p style={{
-              fontSize: 13,
-              color: 'var(--gray-600)',
-              marginBottom: 12,
-            }}>
-              Vertical test not completed yet.
-            </p>
-            <button
-  className="btn-secondary"
-  onClick={() => navigate('/vertical', {
-    state: {
-      neutralPosition: { yaw: 0, pitch: 0, roll: 0 },
-      fromResults: true,
-    }
-  })}
->
-  Start Vertical GST →
-</button>
-          </div>
-        ) : (
-          <div>
-            <div style={{
-              display: 'flex',
-              justifyContent: 'space-between',
-              alignItems: 'flex-end',
-              marginBottom: 16,
-            }}>
-              <div>
-                <p className="score-big">{latest.vScore}</p>
-                <p style={{
-                  fontSize: 12,
-                  color: 'var(--gray-600)',
-                  marginTop: 4,
-                }}>
-                  Accuracy {latest.vAccuracy}%
-                </p>
-              </div>
-              <span className={getTag(latest.vStatus)}>
-                {latest.vStatus}
-              </span>
-            </div>
-
-            {latest.vAvgReactionTime > 0 && (
-              <div className="row">
-                <span style={{ fontSize: 13, color: 'var(--gray-500)' }}>
-                  Avg Response Time
-                </span>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                  <span style={{ fontSize: 13, color: 'var(--white)' }}>
-                    {latest.vAvgReactionTime}ms
-                  </span>
-                  {vRT && (
-                    <span style={{
-                      fontSize: 11,
-                      color: vRT.color,
-                      letterSpacing: '0.06em',
-                      textTransform: 'uppercase',
-                    }}>
-                      {vRT.label}
-                    </span>
-                  )}
-                </div>
-              </div>
-            )}
-
-            {latest.vTrialScores && latest.vTrialScores.length > 0 && (
-              <div style={{ marginTop: 12 }}>
-                <p className="section-title" style={{ marginBottom: 8 }}>
-                  Trial breakdown
-                </p>
-                {latest.vTrialScores.map((score, i) => (
-                  <div key={i} style={{ marginBottom: 12 }}>
-                    <div style={{
-                      display: 'flex',
-                      justifyContent: 'space-between',
-                      marginBottom: 4,
-                    }}>
-                      <span style={{ fontSize: 12, color: 'var(--gray-500)' }}>
-                        Trial {i + 1}
-                      </span>
-                      <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-                        <span style={{ fontSize: 12, color: 'var(--gray-400)' }}>
-                          {score}/10
-                        </span>
-                        {latest.vTrialData?.[i] && (
-                          <span style={{ fontSize: 11, color: 'var(--gray-700)' }}>
-                            {latest.vTrialData[i].avgReactionTime}ms
-                          </span>
-                        )}
-                        <span className={getTag(
-                          score >= 8 ? 'Good' :
-                          score >= 5 ? 'Moderate' : 'Poor'
-                        )}>
-                          {score >= 8 ? 'Good' : score >= 5 ? 'Moderate' : 'Poor'}
-                        </span>
-                      </div>
-                    </div>
-                    <div style={{
-                      height: 3,
-                      background: 'var(--gray-900)',
-                      borderRadius: 2,
-                      overflow: 'hidden',
-                    }}>
-                      <div style={{
-                        height: '100%',
-                        width: `${(score / 10) * 100}%`,
-                        background: score >= 8
-                          ? 'var(--correct)'
-                          : score >= 5
-                          ? 'var(--gray-600)'
-                          : 'var(--wrong)',
-                        transition: 'width 0.5s ease',
-                      }} />
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-        )}
-      </div>
-
-      <hr className="divider" />
-
-      {latest.vScore !== '-' && (
-        <div style={{ marginBottom: 24 }}>
-          <p className="section-title">Overall Assessment</p>
+        <p className="section-title">Overall Assessment</p>
+        <div style={{
+          border: '1px solid var(--gray-800)',
+          padding: 20,
+          marginBottom: 16,
+        }}>
           <div style={{
-            border: '1px solid var(--gray-800)',
-            padding: 20,
+            display: 'flex',
+            justifyContent: 'space-between',
             marginBottom: 16,
           }}>
-            <div style={{
-              display: 'flex',
-              justifyContent: 'space-between',
-              marginBottom: 12,
+            <span style={{ fontSize: 13, color: 'var(--gray-500)' }}>
+              GST Status
+            </span>
+            <span className={getTag(latest.hStatus)}>
+              {latest.hStatus}
+            </span>
+          </div>
+          <div style={{
+            display: 'flex',
+            justifyContent: 'space-between',
+            marginBottom: 16,
+          }}>
+            <span style={{ fontSize: 13, color: 'var(--gray-500)' }}>
+              Response Time
+            </span>
+            <span style={{
+              fontSize: 13,
+              color: hRT?.color || 'var(--gray-400)',
             }}>
-              <span style={{ fontSize: 13, color: 'var(--gray-500)' }}>
-                H-GST
-              </span>
-              <span className={getTag(latest.hStatus)}>
-                {latest.hStatus}
-              </span>
-            </div>
-            <div style={{
-              display: 'flex',
-              justifyContent: 'space-between',
-              marginBottom: 16,
+              {latest.hAvgReactionTime}ms — {hRT?.label || '-'}
+            </span>
+          </div>
+          <div style={{
+            borderTop: '1px solid var(--gray-800)',
+            paddingTop: 14,
+          }}>
+            <p style={{
+              fontSize: 12,
+              color: 'var(--gray-500)',
+              lineHeight: 1.8,
             }}>
-              <span style={{ fontSize: 13, color: 'var(--gray-500)' }}>
-                V-GST
-              </span>
-              <span className={getTag(latest.vStatus)}>
-                {latest.vStatus}
-              </span>
-            </div>
-            <div style={{
-              display: 'flex',
-              justifyContent: 'space-between',
-              marginBottom: 16,
-            }}>
-              <span style={{ fontSize: 13, color: 'var(--gray-500)' }}>
-                H Response
-              </span>
-              <span style={{
-                fontSize: 13,
-                color: hRT?.color || 'var(--gray-400)',
-              }}>
-                {latest.hAvgReactionTime}ms — {hRT?.label || '-'}
-              </span>
-            </div>
-            <div style={{
-              display: 'flex',
-              justifyContent: 'space-between',
-              marginBottom: 16,
-            }}>
-              <span style={{ fontSize: 13, color: 'var(--gray-500)' }}>
-                V Response
-              </span>
-              <span style={{
-                fontSize: 13,
-                color: vRT?.color || 'var(--gray-400)',
-              }}>
-                {latest.vAvgReactionTime}ms — {vRT?.label || '-'}
-              </span>
-            </div>
-            <div style={{
-              borderTop: '1px solid var(--gray-800)',
-              paddingTop: 14,
-            }}>
-              <p style={{
-                fontSize: 12,
-                color: 'var(--gray-500)',
-                lineHeight: 1.8,
-              }}>
-                {getInterpretation(
-                  latest.hStatus,
-                  latest.vStatus,
-                  latest.hAvgReactionTime,
-                  latest.vAvgReactionTime,
-                )}
-              </p>
-            </div>
+              {getInterpretation(latest.hStatus, latest.hAvgReactionTime)}
+            </p>
           </div>
         </div>
-      )}
+      </div>
 
       <hr className="divider" />
 

@@ -12,24 +12,20 @@ export function exportCSV(sessions) {
     'Dominant Eye': s.dominantEye || '-',
     'Baseline SVA': s.sva,
     'Clinical Notes': s.notes || '-',
-    'H-GST Score': s.hScore,
-    'H-GST Accuracy %': s.hAccuracy,
-    'H-GST Status': s.hStatus,
-    'H-GST Avg RT (ms)': s.hAvgReactionTime || '-',
-    'H-Trial 1': s.hTrialScores?.[0] ?? '-',
-    'H-Trial 2': s.hTrialScores?.[1] ?? '-',
-    'H-Trial 3': s.hTrialScores?.[2] ?? '-',
-    'V-GST Score': s.vScore,
-    'V-GST Accuracy %': s.vAccuracy || '-',
-    'V-GST Status': s.vStatus,
-    'V-GST Avg RT (ms)': s.vAvgReactionTime || '-',
-    'V-Trial 1': s.vTrialScores?.[0] ?? '-',
-    'V-Trial 2': s.vTrialScores?.[1] ?? '-',
-    'V-Trial 3': s.vTrialScores?.[2] ?? '-',
-'H-Clarity Ratings': s.hClarityRatings || '-',
-'H-Best Size': s.hBestSize || '-',
-'V-Clarity Ratings': s.vClarityRatings || '-',
-'V-Best Size': s.vBestSize || '-',
+    'GST Score': s.hScore,
+    'GST Accuracy %': s.hAccuracy,
+    'GST Status': s.hStatus,
+    'Avg RT (ms)': s.hAvgReactionTime || '-',
+    'Avg Clarity Grade': s.hAvgClarityGrade ?? '-',
+    'Avg Head Speed (°/s)': s.hHeadMovement?.avgSpeed ?? '-',
+    'Peak Head Speed (°/s)': s.hHeadMovement?.peakSpeed ?? '-',
+    'Total Swings': s.hHeadMovement?.totalSwings ?? '-',
+    'GST Classification': s.hHeadMovement?.avgSpeed >= 120 ? 'Normal GST' :
+      s.hHeadMovement?.avgSpeed < 80 ? 'Abnormal GST' :
+      s.hHeadMovement?.avgSpeed ? 'Borderline' : '-',
+    'Trial 1': s.hTrialScores?.[0] ?? '-',
+    'Trial 2': s.hTrialScores?.[1] ?? '-',
+    'Trial 3': s.hTrialScores?.[2] ?? '-',
   }))
 
   const worksheet = XLSX.utils.json_to_sheet(rows)
@@ -37,9 +33,9 @@ export function exportCSV(sessions) {
   const colWidths = [
     { wch: 4 }, { wch: 12 }, { wch: 10 }, { wch: 18 },
     { wch: 6 }, { wch: 14 }, { wch: 14 }, { wch: 12 },
-    { wch: 22 }, { wch: 14 }, { wch: 16 }, { wch: 14 },
-    { wch: 16 }, { wch: 10 }, { wch: 10 }, { wch: 10 },
-    { wch: 14 }, { wch: 16 }, { wch: 14 }, { wch: 16 },
+    { wch: 22 }, { wch: 12 }, { wch: 14 }, { wch: 14 },
+    { wch: 14 }, { wch: 16 }, { wch: 16 }, { wch: 18 },
+    { wch: 12 }, { wch: 16 },
     { wch: 10 }, { wch: 10 }, { wch: 10 },
   ]
   worksheet['!cols'] = colWidths
@@ -71,17 +67,24 @@ export function exportPDF(sessions) {
     return 'Slow'
   }
 
+  const getGSTClass = (speed) => {
+    if (!speed) return '-'
+    if (speed >= 120) return 'Normal GST'
+    if (speed < 80) return 'Abnormal GST'
+    return 'Borderline'
+  }
+
   const getInterpretation = (s) => {
-    if (s.hStatus === 'Good' && s.vStatus === 'Good') {
-      return `${s.name} demonstrates good gaze stabilization in both horizontal and vertical planes. Vestibulo-ocular reflex is functioning within normal range. Suitable for full sports participation.`
+    if (s.hStatus === 'Good') {
+      return `${s.name} demonstrates good gaze stabilization. Vestibulo-ocular reflex is functioning within normal range. Suitable for full sports participation.`
     }
-    if (s.hStatus === 'Poor' || s.vStatus === 'Poor') {
-      return `${s.name} shows poor gaze stabilization in one or both planes. Further clinical assessment is strongly recommended before returning to sports. Consider vestibular rehabilitation.`
+    if (s.hStatus === 'Poor') {
+      return `${s.name} shows poor gaze stabilization. Further clinical assessment is strongly recommended before returning to sports. Consider vestibular rehabilitation.`
     }
-    if (s.hStatus === 'Moderate' || s.vStatus === 'Moderate') {
+    if (s.hStatus === 'Moderate') {
       return `${s.name} shows moderate gaze stabilization. Monitor performance and retest after 2-4 weeks of vestibular training. Cleared for light training with caution.`
     }
-    return 'Complete both horizontal and vertical tests for full clinical interpretation.'
+    return 'Complete the test for full clinical interpretation.'
   }
 
   const drawLine = () => {
@@ -121,7 +124,7 @@ export function exportPDF(sessions) {
   y = 42
 
   sessions.forEach((s, index) => {
-    checkPage(120)
+    checkPage(110)
 
     doc.setFontSize(13)
     doc.setTextColor(255, 255, 255)
@@ -155,96 +158,73 @@ export function exportPDF(sessions) {
       ? [161, 161, 161]
       : [220, 38, 38]
 
-    const vColor = s.vStatus === 'Good'
-      ? [34, 197, 94]
-      : s.vStatus === 'Moderate'
-      ? [161, 161, 161]
-      : s.vStatus === '-'
-      ? [80, 80, 80]
-      : [220, 38, 38]
-
     doc.setFontSize(8)
     doc.setTextColor(80, 80, 80)
     doc.setFont('helvetica', 'normal')
-    doc.text('HORIZONTAL GST', margin, y)
-    doc.text('VERTICAL GST', pageW / 2, y)
+    doc.text('GAZE STABILIZATION TEST', margin, y)
     y += 5
 
     doc.setFontSize(20)
     doc.setTextColor(255, 255, 255)
     doc.setFont('helvetica', 'normal')
     doc.text(s.hScore, margin, y + 8)
-    doc.text(s.vScore === '-' ? 'Pending' : s.vScore, pageW / 2, y + 8)
 
     doc.setFontSize(9)
     doc.setTextColor(...hColor)
     doc.setFont('helvetica', 'bold')
     doc.text(s.hStatus, margin, y + 16)
 
-    doc.setTextColor(...vColor)
-    doc.text(s.vStatus === '-' ? 'Pending' : s.vStatus, pageW / 2, y + 16)
-
     doc.setFontSize(8)
     doc.setTextColor(100, 100, 100)
     doc.setFont('helvetica', 'normal')
     doc.text(`Accuracy: ${s.hAccuracy}%`, margin, y + 22)
-    if (s.vAccuracy) {
-      doc.text(`Accuracy: ${s.vAccuracy}%`, pageW / 2, y + 22)
-    }
+    doc.text(
+      `Avg RT: ${s.hAvgReactionTime || '-'}ms (${getRTLabel(s.hAvgReactionTime)})`,
+      margin, y + 28
+    )
 
     if (s.hHeadMovement) {
-  doc.text(
-    `Head Speed: ${s.hHeadMovement.avgSpeed}°/s avg, ${s.hHeadMovement.peakSpeed}°/s peak (${s.hHeadMovement.speedLabel}) · ${s.hHeadMovement.totalSwings} swings`,
-    margin, y + 34
-  )
-}
-if (s.vHeadMovement) {
-  doc.text(
-    `Head Speed: ${s.vHeadMovement.avgSpeed}°/s avg, ${s.vHeadMovement.peakSpeed}°/s peak (${s.vHeadMovement.speedLabel}) · ${s.vHeadMovement.totalSwings} swings`,
-    pageW / 2, y + 34
-  )
-}
+      doc.text(
+        `Head Velocity: ${s.hHeadMovement.avgSpeed}°/s avg, ${s.hHeadMovement.peakSpeed}°/s peak — ${getGSTClass(s.hHeadMovement.avgSpeed)} · ${s.hHeadMovement.totalSwings} swings`,
+        margin, y + 34
+      )
+    }
 
-    y += 42
+    if (s.hAvgClarityGrade !== undefined) {
+      doc.text(
+        `Avg Clarity Grade: ${s.hAvgClarityGrade} / 3`,
+        margin, y + 40
+      )
+    }
+
+    y += 48
 
     if (s.hTrialScores?.length > 0) {
       doc.setFontSize(7)
       doc.setTextColor(80, 80, 80)
-      doc.text('H Trials:', margin, y)
+      doc.text('Trials:', margin, y)
       s.hTrialScores.forEach((score, ti) => {
         doc.text(
-          `T${ti + 1}: ${score}/10 (${s.hTrialData?.[ti]?.avgReactionTime || '-'}ms)`,
-          margin + 14 + (ti * 36), y
+          `T${ti + 1}: ${score}/10 (${s.hTrialData?.[ti]?.avgReactionTime || '-'}ms, clarity ${s.hTrialData?.[ti]?.avgClarityGrade ?? '-'}/3)`,
+          margin + 14 + (ti * 60), y
         )
       })
-
-      if (s.vTrialScores?.length > 0) {
-        doc.text('V Trials:', pageW / 2, y)
-        s.vTrialScores.forEach((score, ti) => {
-          doc.text(
-            `T${ti + 1}: ${score}/10 (${s.vTrialData?.[ti]?.avgReactionTime || '-'}ms)`,
-            pageW / 2 + 14 + (ti * 36), y
-          )
-        })
-      }
       y += 8
     }
 
-    if (s.vScore !== '-') {
-      checkPage(20)
-      doc.setFontSize(7)
-      doc.setTextColor(80, 80, 80)
-      doc.setFont('helvetica', 'bold')
-      doc.text('CLINICAL INTERPRETATION', margin, y)
-      y += 5
+    checkPage(20)
+    doc.setFontSize(7)
+    doc.setTextColor(80, 80, 80)
+    doc.setFont('helvetica', 'bold')
+    doc.text('CLINICAL INTERPRETATION', margin, y)
+    y += 5
 
-      doc.setFont('helvetica', 'italic')
-      doc.setTextColor(100, 100, 100)
-      const interpretation = getInterpretation(s)
-      const split = doc.splitTextToSize(interpretation, pageW - margin * 2)
-      doc.text(split, margin, y)
-      y += split.length * 4 + 6
-    }
+    doc.setFont('helvetica', 'italic')
+    doc.setTextColor(100, 100, 100)
+    const interpretation = getInterpretation(s)
+    const split = doc.splitTextToSize(interpretation, pageW - margin * 2)
+    doc.text(split, margin, y)
+    y += split.length * 4 + 6
 
     y += 4
     drawLine()

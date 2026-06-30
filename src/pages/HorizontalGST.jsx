@@ -4,10 +4,9 @@ import useAthleteStore from '../store/useAthleteStore'
 import useFaceTracking from '../hooks/useFaceTracking'
 import useSpeechRecognition from '../hooks/useSpeechRecognition'
 
-const LETTERS = ['E', 'F', 'P', 'T', 'O', 'L', 'C', 'D']
+const LETTERS = ['2', '3', '5', '6', '8', '9', '4', '7']
 const TOTAL_TRIALS = 3
 const LETTERS_PER_TRIAL = 10
-const RESPONSE_TIMEOUT = 3000
 
 const LETTER_SIZES = [220, 180, 140, 100, 70, 50, 36]
 const SIZE_LABELS = ['6/60', '6/36', '6/24', '6/12', '6/9', '6/6', '6/5']
@@ -62,7 +61,7 @@ function ClarityButtonRow({ onRate }) {
         fontSize: 11, color: 'var(--gray-600)', textAlign: 'center',
         letterSpacing: '0.06em', textTransform: 'uppercase', marginBottom: 10,
       }}>
-        Examiner — rate clarity for this letter
+        Examiner — rate clarity for this optotype
       </p>
       <div style={{ display: 'flex', gap: 8 }}>
         {CLARITY_OPTIONS.map((opt) => (
@@ -101,32 +100,31 @@ function HorizontalGST() {
 
   const [phase, setPhase] = useState('intro')
   const [currentTrial, setCurrentTrial] = useState(1)
-  const [currentLetter, setCurrentLetter] = useState('E')
+  const [currentLetter, setCurrentLetter] = useState('2')
   const [letterCount, setLetterCount] = useState(0)
   const [trialScores, setTrialScores] = useState([])
   const [currentScore, setCurrentScore] = useState(0)
-  const [feedback, setFeedback] = useState(null)
   const [showLetter, setShowLetter] = useState(false)
   const [allTrialData, setAllTrialData] = useState([])
   const [letterSizeIndex, setLetterSizeIndex] = useState(0)
   const [awaitingClarity, setAwaitingClarity] = useState(false)
+  const [micHeard, setMicHeard] = useState('')
 
-  const lastLetter = useRef('E')
-  const processedTranscript = useRef('')
+  const lastLetter = useRef('2')
   const waitingRef = useRef(false)
   const letterShownAt = useRef(null)
-  const timeoutRef = useRef(null)
   const currentScoreRef = useRef(0)
   const letterCountRef = useRef(0)
   const reactionTimesRef = useRef([])
   const letterSizeIndexRef = useRef(0)
-  const letterClarityRef = useRef([]) // per-letter clarity log for this trial
+  const letterClarityRef = useRef([])
   const pendingRecordRef = useRef(null)
 
   useEffect(() => { if (!athlete) navigate('/athlete') }, [])
   useEffect(() => { currentScoreRef.current = currentScore }, [currentScore])
   useEffect(() => { letterSizeIndexRef.current = letterSizeIndex }, [letterSizeIndex])
 
+  // Letter appears on head movement — stays visible until examiner taps Next
   useEffect(() => {
     if (phase !== 'testing') return
     if (!isMoving) return
@@ -137,41 +135,48 @@ function HorizontalGST() {
     const newLetter = getRandomLetter(lastLetter.current)
     lastLetter.current = newLetter
     setCurrentLetter(newLetter)
-    setFeedback(null)
     setShowLetter(true)
     waitingRef.current = true
     letterShownAt.current = Date.now()
+    setMicHeard('')
+    pendingRecordRef.current = null
 
-    setTimeout(() => { if (waitingRef.current) startListening() }, 500)
-
-    timeoutRef.current = setTimeout(() => {
-      if (waitingRef.current) handleResponse(null)
-    }, RESPONSE_TIMEOUT)
+    // mic is best-effort only — never blocks progression
+    try { startListening() } catch (e) { /* ignore, examiner-controlled anyway */ }
 
   }, [isMoving])
 
+  // mic result shown as a hint only, does not auto-advance
   useEffect(() => {
     if (!transcript) return
     if (!waitingRef.current) return
-    if (transcript === processedTranscript.current) return
-    processedTranscript.current = transcript
-    clearTimeout(timeoutRef.current)
-    handleResponse(transcript[0])
+    setMicHeard(transcript[0])
   }, [transcript])
 
-  // Step 1: score the letter, then wait for examiner clarity tap before continuing
-  const handleResponse = (spokenLetter) => {
-    const reactionTime = letterShownAt.current ? Date.now() - letterShownAt.current : RESPONSE_TIMEOUT
-    const correct = spokenLetter === currentLetter
-    setFeedback(correct ? 'correct' : 'wrong')
-
+  // Examiner taps "Handled by Examiner" — moves to clarity grading
+  const handleExaminerNext = () => {
+    const reactionTime = letterShownAt.current ? Date.now() - letterShownAt.current : 0
     pendingRecordRef.current = {
       letter: currentLetter,
-      spoken: spokenLetter || '-',
-      correct,
+      micHeard: micHeard || '-',
       reactionTime,
       sizeLabel: SIZE_LABELS[letterSizeIndexRef.current],
     }
+    waitingRef.current = false
+    setAwaitingClarity(true)
+  }
+
+  // Examiner taps a clarity grade — this is the actual scoring step
+  const handleClarityTap = (option) => {
+    const correct = option.grade === 0
+
+    const record = {
+      ...pendingRecordRef.current,
+      clarityGrade: option.grade,
+      clarityLabel: option.label,
+      correct,
+    }
+    letterClarityRef.current = [...letterClarityRef.current, record]
 
     if (correct) {
       setCurrentScore((s) => { currentScoreRef.current = s + 1; return s + 1 })
@@ -180,19 +185,11 @@ function HorizontalGST() {
       setLetterSizeIndex((p) => { const n = Math.max(p - 1, 0); letterSizeIndexRef.current = n; return n })
     }
 
-    reactionTimesRef.current = [...reactionTimesRef.current, reactionTime]
-    setShowLetter(false)
-    setAwaitingClarity(true) // wait for examiner to tap before moving on
-  }
+    reactionTimesRef.current = [...reactionTimesRef.current, record.reactionTime]
 
-  // Step 2: examiner taps clarity for the letter just answered
-  const handleClarityTap = (option) => {
-    const record = { ...pendingRecordRef.current, clarityGrade: option.grade, clarityLabel: option.label }
-    letterClarityRef.current = [...letterClarityRef.current, record]
-
-    waitingRef.current = false
     setAwaitingClarity(false)
-    setFeedback(null)
+    setShowLetter(false)
+    setMicHeard('')
 
     const nextCount = letterCountRef.current + 1
     letterCountRef.current = nextCount
@@ -218,7 +215,6 @@ function HorizontalGST() {
     }
     resetStats()
 
-    // average clarity grade for this trial (0 = best, 3 = worst)
     const grades = letterClarityRef.current.map((l) => l.clarityGrade)
     const avgGrade = grades.length > 0
       ? Math.round((grades.reduce((a, b) => a + b, 0) / grades.length) * 10) / 10
@@ -249,7 +245,6 @@ function HorizontalGST() {
         letterClarityRef.current = []
         setLetterSizeIndex(0)
         letterSizeIndexRef.current = 0
-        setFeedback(null)
         setShowLetter(false)
         setPhase('trialbreak')
         setTimeout(() => setPhase('testing'), 3000)
@@ -301,10 +296,9 @@ function HorizontalGST() {
         speedLabel: overallAvgSpeed < 20 ? 'Very Slow' : overallAvgSpeed < 40 ? 'Slow' :
           overallAvgSpeed < 80 ? 'Moderate' : overallAvgSpeed < 120 ? 'Fast' : 'Very Fast',
       },
-      vScore: '-', vStatus: '-', vAccuracy: null, vTrialScores: [],
     })
 
-    navigate('/results', { state: { neutralPosition, fromHorizontal: true } })
+    navigate('/results')
   }
 
   const startTest = () => {
@@ -316,7 +310,9 @@ function HorizontalGST() {
     reactionTimesRef.current = []
     letterClarityRef.current = []
     setLetterSizeIndex(0); letterSizeIndexRef.current = 0
-    setFeedback(null); setShowLetter(false)
+    setShowLetter(false)
+    setAwaitingClarity(false)
+    setMicHeard('')
     resetStats()
   }
 
@@ -325,13 +321,13 @@ function HorizontalGST() {
       <div className="page">
         <button className="btn-ghost" style={{ width: 'auto', padding: '0 0 32px 0', fontSize: 13 }} onClick={() => navigate('/calibration')}>← Back</button>
         <p className="section-title">Step 2 of 3</p>
-        <h2 className="title-large">Horizontal GST</h2>
+        <h2 className="title-large">Gaze Stabilization Test</h2>
         <p className="subtitle" style={{ marginTop: 8 }}>{athlete?.name} · SVA {athlete?.sva}</p>
         <hr className="divider" />
 
         <div style={{ background: 'var(--gray-900)', border: '1px solid var(--gray-800)', padding: 14, marginBottom: 16 }}>
           <p style={{ fontSize: 12, color: 'var(--gray-400)', lineHeight: 1.8, whiteSpace: 'pre-line' }}>
-            {`Examiner role: after the athlete says each letter, ask how clear it looked\nand tap Clear / Mild / Moderate / Severe before the next letter appears.\nDo NOT let the athlete stop moving their head.`}
+            {`Optotypes are numbers, not letters.\nNumber stays on screen until examiner taps "Handled by Examiner".\nThen rate clarity: Clear / Mild / Moderate / Severe based on what athlete reports.\nMicrophone is optional — works in background only, never required.`}
           </p>
         </div>
 
@@ -345,10 +341,10 @@ function HorizontalGST() {
 
         <video ref={videoRef} style={{ width: '100%', aspectRatio: '4/3', objectFit: 'cover', transform: 'scaleX(-1)', display: 'block', border: '1px solid var(--gray-800)', marginBottom: 20 }} playsInline muted />
 
-        {!supported && <p style={{ color: 'var(--wrong)', fontSize: 12, marginBottom: 12 }}>Voice not supported. Please use Chrome browser.</p>}
+        {!supported && <p style={{ color: 'var(--gray-600)', fontSize: 12, marginBottom: 12 }}>Mic not supported on this browser — examiner can still grade manually.</p>}
 
         <button className="btn-primary" onClick={startTest} disabled={!ready} style={{ opacity: !ready ? 0.4 : 1, cursor: !ready ? 'not-allowed' : 'pointer' }}>
-          Start Horizontal GST
+          Start GST
         </button>
         <button className="btn-ghost" onClick={() => navigate('/')}>Cancel Test</button>
       </div>
@@ -380,7 +376,7 @@ function HorizontalGST() {
     const accuracy = Math.round((total / max) * 100)
     return (
       <div style={{ minHeight: '100vh', background: 'var(--black)', padding: 24, display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
-        <p className="section-title">Horizontal GST Complete</p>
+        <p className="section-title">GST Complete</p>
         <p className="title-large">Trial Summary</p>
         <hr className="divider" />
         {trialScores.map((score, i) => (
@@ -401,9 +397,9 @@ function HorizontalGST() {
   return (
     <div style={{
       minHeight: '100vh',
-      background: feedback === 'correct' ? '#0a1a0a' : feedback === 'wrong' ? '#1a0a0a' : 'var(--black)',
+      background: 'var(--black)',
       display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
-      transition: 'background 0.2s ease', position: 'relative', padding: '80px 24px',
+      position: 'relative', padding: '80px 24px',
     }}>
       <video ref={videoRef} style={{ display: 'none' }} playsInline muted />
       <ProgressBar current={letterCount} total={LETTERS_PER_TRIAL} />
@@ -414,53 +410,74 @@ function HorizontalGST() {
         <span style={{ fontSize: 12, color: 'var(--gray-600)' }}>{SIZE_LABELS[letterSizeIndex]}</span>
       </div>
 
+      <div style={{ position: 'absolute', top: 44, right: 24, textAlign: 'right' }}>
+        <p style={{ fontSize: 10, color: 'var(--gray-800)' }}>{headStats.currentSpeed}°/s · {headStats.speedLabel}</p>
+      </div>
+
       {!awaitingClarity && <PendulumGuide isMovingLeft={isMovingLeft} isMovingRight={isMovingRight} isMoving={isMoving} />}
 
-      {!awaitingClarity && (
-        <div style={{
-          fontSize: showLetter ? LETTER_SIZES[letterSizeIndex] : 0,
-          fontWeight: 200,
-          color: feedback === 'correct' ? 'var(--correct)' : feedback === 'wrong' ? 'var(--wrong)' : 'var(--white)',
-          lineHeight: 1, fontFamily: 'monospace', letterSpacing: '-0.05em',
-          transition: 'font-size 0.3s ease, color 0.2s ease', userSelect: 'none',
-          minHeight: 220, display: 'flex', alignItems: 'center', justifyContent: 'center',
-        }}>
-          {showLetter ? currentLetter : ''}
-        </div>
-      )}
-
-      {feedback && !awaitingClarity && (
-        <p style={{ fontSize: 13, color: feedback === 'correct' ? 'var(--correct)' : 'var(--wrong)', letterSpacing: '0.12em', marginTop: 12, textTransform: 'uppercase' }}>
-          {feedback === 'correct' ? 'Correct' : 'Wrong'}
-        </p>
-      )}
-
-      {awaitingClarity && (
+      {!awaitingClarity && showLetter && (
         <>
-          <p style={{
-            fontSize: 13,
-            color: feedback === 'correct' ? 'var(--correct)' : 'var(--wrong)',
-            letterSpacing: '0.12em', textTransform: 'uppercase', marginBottom: 4,
+          <div style={{
+            fontSize: LETTER_SIZES[letterSizeIndex],
+            fontWeight: 200,
+            color: 'var(--white)',
+            lineHeight: 1,
+            fontFamily: 'monospace',
+            letterSpacing: '-0.05em',
+            userSelect: 'none',
+            minHeight: 220,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
           }}>
-            {feedback === 'correct' ? 'Correct' : 'Wrong'} — letter was {currentLetter}
-          </p>
-          <ClarityButtonRow onRate={handleClarityTap} />
+            {currentLetter}
+          </div>
+
+          {micHeard && (
+            <p style={{ fontSize: 11, color: 'var(--gray-700)', marginTop: -8, marginBottom: 12 }}>
+              mic heard "{micHeard}"
+            </p>
+          )}
+
+          <button
+            className="btn-primary"
+            style={{ marginTop: 12, maxWidth: 280 }}
+            onClick={handleExaminerNext}
+          >
+            Handled by Examiner →
+          </button>
         </>
       )}
 
-      {!showLetter && !feedback && !awaitingClarity && (
+      {!showLetter && !awaitingClarity && (
         <p style={{ fontSize: 13, color: 'var(--gray-800)', letterSpacing: '0.08em', textTransform: 'uppercase', marginTop: 12 }}>
           Keep moving ↔
         </p>
       )}
 
-      <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, padding: '16px 24px', borderTop: '1px solid var(--gray-900)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+      {awaitingClarity && (
+        <>
+          <p style={{ fontSize: 13, color: 'var(--gray-400)', marginBottom: 4 }}>
+            Optotype was {currentLetter}
+            {pendingRecordRef.current?.micHeard && pendingRecordRef.current.micHeard !== '-' && (
+              <span style={{ color: 'var(--gray-700)' }}> · mic heard "{pendingRecordRef.current.micHeard}"</span>
+            )}
+          </p>
+          <ClarityButtonRow onRate={handleClarityTap} />
+        </>
+      )}
+
+      <div style={{
+        position: 'absolute', bottom: 0, left: 0, right: 0, padding: '16px 24px',
+        borderTop: '1px solid var(--gray-900)', display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+      }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
           <div style={{ width: 6, height: 6, borderRadius: '50%', background: ready ? 'var(--correct)' : 'var(--wrong)' }} />
           <span style={{ fontSize: 11, color: 'var(--gray-700)' }}>{ready ? 'Ready' : 'Loading'}</span>
         </div>
         <span style={{ fontSize: 11, color: 'var(--gray-700)' }}>
-          {awaitingClarity ? 'Waiting for examiner' : listening ? '🎤 Listening' : isMoving ? 'Keep moving' : '← Swing head →'}
+          {awaitingClarity ? 'Waiting for examiner' : listening ? '🎤 Listening (optional)' : isMoving ? 'Keep moving' : '← Swing head →'}
         </span>
         <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
           <div style={{ width: 6, height: 6, borderRadius: '50%', background: listening ? 'var(--correct)' : 'var(--gray-800)' }} />

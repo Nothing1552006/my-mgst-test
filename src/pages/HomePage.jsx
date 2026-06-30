@@ -9,13 +9,7 @@ function HomePage() {
     if (status === 'Good') return 'tag tag-good'
     if (status === 'Moderate') return 'tag tag-moderate'
     if (status === 'Poor') return 'tag tag-poor'
-    if (status === '-') return 'tag'
     return 'tag'
-  }
-
-  const getStatusLabel = (status) => {
-    if (status === '-') return 'Pending'
-    return status
   }
 
   return (
@@ -127,22 +121,21 @@ function HomePage() {
               gap: 8,
               marginTop: 8,
               flexWrap: 'wrap',
+              alignItems: 'center',
             }}>
               <span className={getStatusTag(s.hStatus)}>
-                H — {getStatusLabel(s.hStatus)}
-              </span>
-              <span className={getStatusTag(s.vStatus)}>
-                V — {getStatusLabel(s.vStatus)}
+                GST — {s.hStatus}
               </span>
 
               {s.hAccuracy > 0 && (
                 <span className="tag">
-                  H {s.hAccuracy}%
+                  {s.hAccuracy}%
                 </span>
               )}
-              {s.vAccuracy > 0 && (
+
+              {s.hHeadMovement?.avgSpeed && (
                 <span className="tag">
-                  V {s.vAccuracy}%
+                  {s.hHeadMovement.avgSpeed}°/s
                 </span>
               )}
             </div>
@@ -153,8 +146,7 @@ function HomePage() {
                 color: 'var(--gray-700)',
                 marginTop: 8,
               }}>
-                H Response: {s.hAvgReactionTime}ms
-                {s.vAvgReactionTime > 0 && ` · V Response: ${s.vAvgReactionTime}ms`}
+                Response: {s.hAvgReactionTime}ms
               </p>
             )}
 
