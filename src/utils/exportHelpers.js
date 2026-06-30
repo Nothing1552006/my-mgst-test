@@ -192,18 +192,20 @@ export function exportPDF(sessions) {
       doc.text(`Accuracy: ${s.vAccuracy}%`, pageW / 2, y + 22)
     }
 
-    doc.text(
-      `Avg RT: ${s.hAvgReactionTime || '-'}ms (${getRTLabel(s.hAvgReactionTime)})`,
-      margin, y + 28
-    )
-    if (s.vAvgReactionTime) {
-      doc.text(
-        `Avg RT: ${s.vAvgReactionTime}ms (${getRTLabel(s.vAvgReactionTime)})`,
-        pageW / 2, y + 28
-      )
-    }
+    if (s.hHeadMovement) {
+  doc.text(
+    `Head Speed: ${s.hHeadMovement.avgSpeed}°/s avg, ${s.hHeadMovement.peakSpeed}°/s peak (${s.hHeadMovement.speedLabel}) · ${s.hHeadMovement.totalSwings} swings`,
+    margin, y + 34
+  )
+}
+if (s.vHeadMovement) {
+  doc.text(
+    `Head Speed: ${s.vHeadMovement.avgSpeed}°/s avg, ${s.vHeadMovement.peakSpeed}°/s peak (${s.vHeadMovement.speedLabel}) · ${s.vHeadMovement.totalSwings} swings`,
+    pageW / 2, y + 34
+  )
+}
 
-    y += 36
+    y += 42
 
     if (s.hTrialScores?.length > 0) {
       doc.setFontSize(7)
